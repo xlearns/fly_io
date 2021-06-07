@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>test</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+      }
+      canvas {
+        height: 100%;
+      }
+      body {
+        overflow: hidden;
+      }
+
+      #info_pannel {
+        position: fixed;
+        left: 10px;
+        top: 10px;
+        width: 270px;
+        height: 150px;
+        background: rgba(0, 0, 0, 0.2);
+        overflow: hidden;
+      }
+      #health_bar {
+        position: fixed;
+        top: 10px;
+        right: 10px;
+        width: 300px;
+        height: 15px;
+        border: 1px solid rgba(0, 0, 0, 0.5);
+        background: rgba(255, 255, 255, 0.5);
+        border-radius: 15px;
+      }
+      #bullter {
+        position: fixed;
+        top: 30px;
+        right: 10px;
+        width: 300px;
+        height: 15px;
+        font-weight: 600;
+        color: red;
+      }
+      #health_filler {
+        position: absolute;
+        width: 100%;
+        height: 15px;
+        border-radius: 15px;
+        background: rgba(250, 40, 40, 0.5);
+      }
+      .info_kill {
+        padding: 10px;
+        font-size: 14px;
+        color: white;
+        padding-bottom: 0px;
+      }
+      .killer {
+        color: green;
+      }
+      .killed {
+        color: red;
+      }
+      .show {
+        display: block !important;
+      }
+      .main {
+        display: none;
+      }
+      .killer_public {
+        position: absolute;
+        top: 128px;
+        left: 50%;
+        font-size: 35px;
+        font-weight: 700;
+        transform: translate(-50%);
+        color: #ff5722;
+      }
+    </style>
+    <script src="./js/jquery.js"></script>
+    <script src="./js/zzz.min.js"></script>
+    <script src="./js/socket.io.js"></script>
+    <script src="./js/tools.js"></script>
+    <script src="./js/bullet.js"></script>
+    <script src="./js/player.js"></script>
+    <script src="./js/otherplay.js"></script>
+    <script src="./socket/newPlayer.js"></script>
+  </head>
+  <body>
+    <div class="main">
+      <div id="info_pannel"></div>
+      <div id="health_bar"><div id="health_filler"></div></div>
+      <div id="bullter">弹药准备完毕</div>
+      <div class="killer_public"></div>
+    </div>
+    <script>
+      var name
+      var url = location.search //获取url中"?"符后的字串
+      if (url.indexOf('?') != -1) {
+        var str = url.substr(1)
+        name = str.split('=')[1]
+      }
+      let socket = null
+      let otherPlayers = {}
+      let player__name = []
+      let lock = true
+      let loader__finsh = false
+      let isCollide = false
+      var dev__width = window.innerWidth * window.devicePixelRatio
+      var dev__height = window.innerHeight * window.devicePixelRatio
+      //武器类型
+      var map = {
+        w: 0,
+        h: 0,
+      }
+      class Example extends Phaser.Scene {
+        constructor() {
+          super('Example')
+        }
+        preload() {
+          var progress = this.add.graphics()
+          this.load.on('progress', function (value) {
+            progress.clear()
+            progress.fillStyle(0x00ff0b, 1)
+            progress.fillRect(0, 270, dev__width * value, 60)
+          })
+          this.load.on('complete', function () {
+            console.log('ok')
+            progress.destroy()
+          })
+          this.load.image('map', './image/earthbound-scarab.png')
+          this.load.image('bullet', './image/bullet.png')
+          this.load.image('player', './image/fmship.png')
+          this.load.image('wall', './image/touming.png')
+          this.load.image('gameover', './image/gameover.png')
+        }
+        create() {
+          socket = io()
+          this.name = name
+          this.speed = 2.5
+          this.Angle = 0
+          this.cameras.main.setBounds(0, 0, 1024, 2048)
+          this.smallMap = this.cameras.add(-100, -80, 400, 300).setZoom(0.1)
+          let wall_top = this.physics.add.image(0, 0, 'wall').setPushable(false)
+          let wall_left = this.physics.add
+            .image(0, 0, 'wall')
+            .setPushable(false)
+          let wall_right = this.physics.add
+            .image(1074, 0, 'wall')
+            .setPushable(false)
+          let wall_bottom = this.physics.add
+            .image(0, 2098, 'wall')
+            .setPushable(false)
+          var m = this.add.image(0, 0, 'map').setOrigin(0).setScrollFactor(1)
+          map.w = m.width
+          map.h = m.height
+          wall_top.body.width = map.w + 50
+          wall_top.body.height = 50
+          wall_left.body.width = 50
+          wall_left.body.height = map.h + 50
+          wall_right.body.width = 50
+          wall_right.body.height = map.h + 50
+          wall_bottom.body.width = map.w + 50
+          wall_bottom.body.height = 50
+          window.wall_bottom = wall_bottom
+          this.player = player(
+            (Math.random() * dev__width) / 2 + 36,
+            (Math.random() * dev__height) / 2 + 36,
+            this,
+            socket,
+            name
+          )
+          this.physics.add.collider(this.player.player, wall_top)
+          this.physics.add.collider(this.player.player, wall_left)
+          this.physics.add.collider(this.player.player, wall_right)
+          this.physics.add.collider(this.player.player, wall_bottom)
+          newPlayer(socket, this.player, this)
+          updatePlayers(socket, otherPlayers, this)
+          this.cameras.main.startFollow(this.player.player, true)
+          this.cameras.main.setZoom(4)
+          $('.main').addClass('show')
+        }
+        update() {
+          this.player.drive(this)
+          playerMovementInterpolation(otherPlayers, this)
+        }
+      }
+      class End extends Phaser.Scene {
+        constructor() {
+          super('End')
+        }
+        preload() {}
+        create() {
+          this.add.image(dev__width / 2, dev__height / 2, 'gameover')
+        }
+        update() {}
+      }
+      const config = {
+        type: Phaser.AUTO,
+        parent: 'phaser-example',
+        width: dev__width,
+        height: dev__height,
+        pixelArt: true,
+        physics: {
+          default: 'arcade',
+          arcade: {
+            debug: true,
+          },
+        },
+        antialias: false,
+        scene: [Example, End],
+      }
+      const game = new Phaser.Game(config)
+    </script>
+  </body>
+</html>
